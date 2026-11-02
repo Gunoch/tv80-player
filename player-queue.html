@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>TV80</title>
+<style>
+html,body{margin:0;width:100%;height:100%;background:#000;overflow:hidden;color:#fff;font:18px Arial,sans-serif}
+#tv{position:absolute;inset:0;width:100%;height:100%;border:0}
+#status{position:absolute;inset:0;display:grid;place-items:center;text-align:center;background:#111;padding:24px;box-sizing:border-box}
+#status[hidden]{display:none}
+button{font:inherit;padding:14px 24px;border:1px solid #aaa;border-radius:8px;background:#222;color:#fff;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="tv"></div><div id="status" role="status">Loading video…</div>
+<script>
+"use strict";
+const query=new URLSearchParams(location.search);
+const validId=s=>typeof s==="string"&&/^[A-Za-z0-9_-]{11}$/.test(s);
+const validList=s=>typeof s==="string"&&/^[A-Za-z0-9_-]{1,100}$/.test(s);
+const video=query.get("v"), list=query.get("list"), token=query.get("token")||"";
+let notify="";
+try{
+  const url=new URL(query.get("notify"));
+  if(url.protocol==="https:"&&!url.username&&!url.password&&url.href.length<=500) notify=url.href;
+}catch{}
+let player, ready=false, finished=false, sentError=false;
+const status=document.getElementById("status");
+function message(text){status.textContent=text;status.hidden=false;}
+function playButton(){
+  status.replaceChildren();
+  const button=document.createElement("button");
+  button.textContent="Play video";
+  button.onclick=()=>{status.hidden=true;player.playVideo();};
+  status.append(button);status.hidden=false;
+}
+async function signal(event,code){
+  if(!notify||!token) return;
+  const body=JSON.stringify({event,token,...(code===undefined?{}:{code:String(code)})});
+  // SL HTTP-in does not allow custom CORS headers. Send a simple POST without reading the response.
+  // The object validates each playback token and ignores stale or duplicate notifications.
+  for(let attempt=0;attempt<3;attempt++){
+    try{
+      await fetch(notify,{method:"POST",mode:"no-cors",credentials:"omit",headers:{"Content-Type":"text/plain;charset=UTF-8"},body,keepalive:true,referrerPolicy:"no-referrer"});
+      return;
+    }catch{
+      if(attempt<2) await new Promise(resolve=>setTimeout(resolve,1000*(attempt+1)));
+    }
+  }
+  if(event==="ended") message("The video ended. If the queue does not advance, choose Skip in the TV menu.");
+}
+function stateChange(event){
+  if(event.data===1){status.hidden=true;return;}
+  if(event.data!==0||finished) return;
+  // A YouTube playlist remains one queue entry until its final item ends.
+  if(list&&player.getPlaylist&&player.getPlaylistIndex){
+    const items=player.getPlaylist();
+    if(items&&player.getPlaylistIndex()<items.length-1) return;
+  }
+  finished=true;
+  signal("ended");
+}
+function playerError(event){
+  const reasons={2:"Invalid video link.",5:"This video could not be played.",100:"This video is private or has been removed.",101:"This video does not allow embedded playback.",150:"This video does not allow embedded playback.",153:"YouTube rejected the player identification."};
+  message((reasons[event.data]||"The video could not be loaded.")+" Choose Skip in the TV menu.");
+  if(!sentError){sentError=true;signal("error",event.data);}
+}
+window.onYouTubeIframeAPIReady=function(){
+  if(!validId(video)&&!validList(list)){message("Add a video or playlist link using the TV menu.");return;}
+  const vars={autoplay:1,rel:0,playsinline:1,controls:1,origin:location.origin};
+  if(validList(list)){vars.listType="playlist";vars.list=list;}
+  player=new YT.Player("tv",{
+    width:"100%",height:"100%",videoId:validId(video)?video:undefined,
+    playerVars:vars,
+    events:{
+      onReady:event=>{ready=true;status.hidden=true;event.target.playVideo();},
+      onStateChange:stateChange,
+      onError:playerError,
+      onAutoplayBlocked:playButton
+    }
+  });
+};
+const api=document.createElement("script");
+api.src="https://www.youtube.com/iframe_api";
+api.onerror=()=>message("Could not connect to YouTube. Try again using the TV menu.");
+document.head.append(api);
+setTimeout(()=>{if(!ready) message("YouTube is taking too long to respond. Try again using the TV menu.");},20000);
+</script>
+</body>
+</html>
