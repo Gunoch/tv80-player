@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>TV80</title>
+<style>
+html,body{margin:0;width:100%;height:100%;background:#000;overflow:hidden;color:#fff;font:18px Arial,sans-serif}
+#tv{position:absolute;inset:0;width:100%;height:100%;border:0}
+#status{position:absolute;inset:0;display:grid;place-items:center;text-align:center;background:#111;padding:24px;box-sizing:border-box}
+#status[hidden]{display:none}
+button{font:inherit;padding:14px 24px;border:1px solid #aaa;border-radius:8px;background:#222;color:#fff;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="tv"></div><div id="status" role="status">Carregando vídeo…</div>
+<script>
+"use strict";
+const query=new URLSearchParams(location.search);
+const validId=s=>typeof s==="string"&&/^[A-Za-z0-9_-]{11}$/.test(s);
+const validList=s=>typeof s==="string"&&/^[A-Za-z0-9_-]{1,100}$/.test(s);
+const video=query.get("v"), list=query.get("list"), token=query.get("token")||"";
+let notify="";
+try{
+  const url=new URL(query.get("notify"));
+  if(url.protocol==="https:"&&!url.username&&!url.password&&url.href.length<=500) notify=url.href;
+}catch{}
+let player, ready=false, finished=false, sentError=false;
+const status=document.getElementById("status");
+function message(text){status.textContent=text;status.hidden=false;}
+function playButton(){
+  status.replaceChildren();
+  const button=document.createElement("button");
+  button.textContent="Reproduzir vídeo";
+  button.onclick=()=>{status.hidden=true;player.playVideo();};
+  status.append(button);status.hidden=false;
+}
+async function signal(event,code){
+  if(!notify||!token) return;
+  const body=JSON.stringify({event,token,...(code===undefined?{}:{code:String(code)})});
+  // HTTP-in do SL nao permite headers CORS. POST simples, resposta nao lida.
+  // O objeto valida o token de cada reproducao e ignora avisos antigos/duplicados.
+  for(let attempt=0;attempt<3;attempt++){
+    try{
+      await fetch(notify,{method:"POST",mode:"no-cors",credentials:"omit",headers:{"Content-Type":"text/plain;charset=UTF-8"},body,keepalive:true,referrerPolicy:"no-referrer"});
+      return;
+    }catch{
+      if(attempt<2) await new Promise(resolve=>setTimeout(resolve,1000*(attempt+1)));
+    }
+  }
+  if(event==="ended") message("O vídeo terminou. Se a fila não avançar, use Pular no menu da TV.");
+}
+function stateChange(event){
+  if(event.data===1){status.hidden=true;return;}
+  if(event.data!==0||finished) return;
+  // Numa playlist do YouTube, apenas o fim do ultimo item termina a entrada.
+  if(list&&player.getPlaylist&&player.getPlaylistIndex){
+    const items=player.getPlaylist();
+    if(items&&player.getPlaylistIndex()<items.length-1) return;
+  }
+  finished=true;
+  signal("ended");
+}
+function playerError(event){
+  const reasons={2:"Link de vídeo inválido.",5:"Não foi possível reproduzir este vídeo.",100:"Vídeo removido ou privado.",101:"Este vídeo não permite reprodução incorporada.",150:"Este vídeo não permite reprodução incorporada.",153:"O YouTube recusou a identificação do player."};
+  message((reasons[event.data]||"Não foi possível carregar o vídeo.")+" Use Pular no menu da TV.");
+  if(!sentError){sentError=true;signal("error",event.data);}
+}
+window.onYouTubeIframeAPIReady=function(){
+  if(!validId(video)&&!validList(list)){message("Adicione um link de vídeo ou playlist pelo menu da TV.");return;}
+  const vars={autoplay:1,rel:0,playsinline:1,controls:1,origin:location.origin};
+  if(validList(list)){vars.listType="playlist";vars.list=list;}
+  player=new YT.Player("tv",{
+    width:"100%",height:"100%",videoId:validId(video)?video:undefined,
+    playerVars:vars,
+    events:{
+      onReady:event=>{ready=true;status.hidden=true;event.target.playVideo();},
+      onStateChange:stateChange,
+      onError:playerError,
+      onAutoplayBlocked:playButton
+    }
+  });
+};
+const api=document.createElement("script");
+api.src="https://www.youtube.com/iframe_api";
+api.onerror=()=>message("Não foi possível conectar ao YouTube. Tente novamente pelo menu da TV.");
+document.head.append(api);
+setTimeout(()=>{if(!ready) message("O YouTube está demorando para responder. Tente novamente pelo menu da TV.");},20000);
+</script>
+</body>
+</html>
