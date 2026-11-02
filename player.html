@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TV80 player</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+</style>
+</head>
+<body>
+<!-- Pagina player da TV anos 80 (Second Life): poe o video do YouTube ocupando a
+     tela inteira. O YouTube so aceita /embed/ dentro de um iframe numa pagina com
+     endereco de verdade (aberto direto na midia do SL, ou numa pagina data:, da
+     erro 153). A TV abre esta pagina com ?v=ID_DO_VIDEO ou ?list=ID_DA_PLAYLIST. -->
+<iframe id="tv" allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+        referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+<script>
+  const q = new URLSearchParams(location.search);
+  const limpa = (s) => (s || "").replace(/[^A-Za-z0-9_-]/g, "");
+  const v = limpa(q.get("v")), l = limpa(q.get("list"));
+  let src = "https://www.youtube.com/embed/";
+  if (l) src += "videoseries?list=" + l + "&";
+  else if (v) src += v + "?playlist=" + v + "&loop=1&";
+  else src = "about:blank#";
+  document.getElementById("tv").src = src + "autoplay=1&rel=0&playsinline=1";
+</script>
+</body>
+</html>
